@@ -1,0 +1,13 @@
+.git
+.venv
+frontend/node_modules
+frontend/dist
+tests
+.env
+.gitignore
+.pre-commit-config.yaml
+.coverage
+.pytest_cache
+.ruff_cache
+*.pyc
+__pycache__

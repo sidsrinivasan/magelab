@@ -1,0 +1,41 @@
+minimum_pre_commit_version: 4.2.0
+exclude: ^LICENSES/|\.(html|svg)$
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9
+    hooks:
+      - id: ruff-check
+        name: Lint Python code with Ruff
+        types_or: [ python, pyi ]
+        args: [ --fix,  --exit-non-zero-on-fix ]
+      - id: ruff-format
+        name: Format Python code with Ruff
+        types_or: [ python, pyi, jupyter ]
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.3
+    hooks:
+      - id: uv-lock
+        name: Update lockfile with uv
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        name: Check for common misspellings in text files
+        types_or: [python, rst, markdown]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+      - id: end-of-file-fixer
+        name: Ensure files end in newlines
+      - id: debug-statements
+        name: Check for debug statements
+      - id: check-merge-conflict
+        name: Check for remaining merge conflict markers
+      - id: check-toml
+        name: Ensure TOML files are valid
+      - id: check-yaml
+        name: Ensure YAML files are valid
+      - id: check-added-large-files
+        name: Check for added large files

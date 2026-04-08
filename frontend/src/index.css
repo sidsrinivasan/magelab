@@ -1,0 +1,206 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Custom theme tokens ─────────────────────────────────── */
+
+@theme inline {
+    --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --radius-2xl: calc(var(--radius) + 8px);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+
+    /* Custom state colors */
+    --color-state-working: #34d399;
+    --color-state-reviewing: #fbbf24;
+    --color-state-idle: #64748b;
+    --color-state-terminated: #f87171;
+}
+
+/* ── Dark observatory palette ──────────────────────────── */
+
+:root {
+    --radius: 0.5rem;
+}
+
+.dark {
+    --background: #0a0e17;
+    --foreground: #e2e8f0;
+    --card: #111827;
+    --card-foreground: #e2e8f0;
+    --popover: #111827;
+    --popover-foreground: #e2e8f0;
+    --primary: #60a5fa;
+    --primary-foreground: #0a0e17;
+    --secondary: #1e293b;
+    --secondary-foreground: #e2e8f0;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+    --accent: #1e293b;
+    --accent-foreground: #e2e8f0;
+    --destructive: #ef4444;
+    --border: rgba(148, 163, 184, 0.1);
+    --input: rgba(148, 163, 184, 0.15);
+    --ring: #60a5fa;
+    --chart-1: #60a5fa;
+    --chart-2: #34d399;
+    --chart-3: #fbbf24;
+    --chart-4: #a78bfa;
+    --chart-5: #f87171;
+    --sidebar: #0f172a;
+    --sidebar-foreground: #e2e8f0;
+    --sidebar-primary: #60a5fa;
+    --sidebar-primary-foreground: #0a0e17;
+    --sidebar-accent: #1e293b;
+    --sidebar-accent-foreground: #e2e8f0;
+    --sidebar-border: rgba(148, 163, 184, 0.1);
+    --sidebar-ring: #60a5fa;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground font-sans antialiased;
+    }
+}
+
+/* ── State indicator pulse animations ─────────────────── */
+
+@keyframes pulse-working {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+}
+
+@keyframes pulse-reviewing {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0); }
+}
+
+.pulse-working {
+    animation: pulse-working 2s ease-in-out infinite;
+}
+
+.pulse-reviewing {
+    animation: pulse-reviewing 2s ease-in-out infinite;
+}
+
+/* ── Card hover glow ──────────────────────────────────── */
+
+.card-glow {
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.card-glow:hover {
+    box-shadow: 0 0 20px -5px rgba(96, 165, 250, 0.15);
+    border-color: rgba(96, 165, 250, 0.2);
+}
+
+/* ── Staggered entrance ───────────────────────────────── */
+
+@keyframes fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-up {
+    animation: fade-up 0.4s ease-out both;
+}
+
+/* ── Noise texture overlay ────────────────────────────── */
+
+.noise-bg::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    opacity: 0.015;
+    pointer-events: none;
+    z-index: 9999;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px;
+}
+
+/* ── Radix ScrollArea: prevent horizontal overflow ───── */
+
+[data-radix-scroll-area-viewport] > div {
+    display: block !important;
+}
+
+/* ── Scrollbar styling ────────────────────────────────── */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.35);
+}
+
+/* ── React Flow overrides ─────────────────────────────── */
+
+.react-flow__background {
+    background-color: #0a0e17 !important;
+}
+.react-flow__minimap {
+    background-color: #111827 !important;
+}
+.react-flow__controls button {
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+    border-color: rgba(148, 163, 184, 0.1) !important;
+}
+.react-flow__controls button:hover {
+    background-color: #334155 !important;
+}
