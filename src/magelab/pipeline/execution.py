@@ -27,7 +27,7 @@ from ..state.database import Database
 from ..state.database_hydration import reconstruct_org_config_from_db
 from ..view import RunView
 from .display import StatusDisplay
-from .docker import DEFAULT_IMAGE, ensure_image, run_in_docker
+from .docker import cleanup_container, ensure_image, run_in_docker, start_container
 
 # Stage callback: receives output dir, logger, and the current OrgConfig (which
 # includes runtime mutations from the previous run). Returns OrgConfig (configure
@@ -135,21 +135,12 @@ async def run_pipeline(
     config_path_resolved = str(Path(config_path).resolve())
     output_dir = Path(output_dir).resolve()
 
-    # Ensure Docker image if needed
-    if docker is not None:
-        await ensure_image(force=(docker == "build"))
-
     # Create directory structure
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "workspace").mkdir(exist_ok=True)
     (output_dir / "workspace" / ".trash").mkdir(exist_ok=True)
     (output_dir / "logs").mkdir(exist_ok=True)
     (output_dir / "configs").mkdir(exist_ok=True)
-
-    # Mark Docker mode so run_in_workspace can detect it
-    docker_marker = output_dir / ".docker_image"
-    if docker is not None and not docker_marker.exists():
-        docker_marker.write_text(DEFAULT_IMAGE)
 
     # Setup logging
     framework_logger = _setup_logging(output_dir / "logs")
@@ -175,6 +166,11 @@ async def run_pipeline(
                 pass
 
     try:
+        # Docker setup: ensure image exists, then start long-lived container
+        if docker is not None:
+            await ensure_image(force=(docker == "build"))
+            await start_container(output_dir, frontend_port, auth=auth)
+
         # Parse initial config (stages can override by returning a new OrgConfig)
         current_org_config = OrgConfig.from_yaml(config_path_resolved)
         num_org_runs = len(stages) - 1
@@ -274,6 +270,8 @@ async def run_pipeline(
         return outcomes
 
     finally:
+        if docker is not None:
+            await cleanup_container(output_dir)
         if own_display:
             await own_display.stop()
 

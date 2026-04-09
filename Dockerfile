@@ -30,6 +30,12 @@ RUN cd /opt/magelab/frontend && npm ci && npx vite build
 # ---- Make everything readable/writable by non-root (container runs as host user) ----
 RUN chmod -R a+rX /opt/uv/python && chmod -R a+rwX /opt/magelab/.venv
 
+# ---- Install pip into the venv so agent `pip install` goes to the same site-packages ----
+RUN /opt/magelab/.venv/bin/python -m ensurepip && \
+    /opt/magelab/.venv/bin/python -m pip install --upgrade pip
+
+# ---- Set venv as default Python so agents, magelab, and eval all share one environment ----
+ENV PATH="/opt/magelab/.venv/bin:$PATH"
 ENV UV_CACHE_DIR=/tmp/uv_cache
 ENV HOME=/tmp
 

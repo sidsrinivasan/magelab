@@ -7,13 +7,14 @@ previous runs.
 """
 
 from ..orchestrator import RunOutcome
-from .docker import run_in_workspace
+from .docker import WorkspaceResult, run_in_workspace
 from .execution import StageFn, run_pipeline, run_pipeline_batch, view_run, view_run_batch
 
 __all__ = [
     "run_pipeline",
     "run_pipeline_batch",
     "run_in_workspace",
+    "WorkspaceResult",
     "view_run",
     "view_run_batch",
     "StageFn",

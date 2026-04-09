@@ -692,31 +692,34 @@ def my_stage(output_dir: Path, logger: logging.Logger, config: OrgConfig) -> Org
 Stages can be sync or async — async stages are awaited automatically.
 
 ```python
+import shutil
 from pathlib import Path
 from magelab import OrgConfig, run_in_workspace
 
-def setup(output_dir: Path, logger, config: OrgConfig) -> OrgConfig | None:
+async def setup(output_dir: Path, logger, config: OrgConfig) -> None:
     shutil.copy("data/train.json", output_dir / "workspace" / "train.json")
-    return None
+    shutil.copy("requirements.txt", output_dir / "workspace" / "requirements.txt")
+    # Install experiment dependencies inside the container
+    await run_in_workspace(["pip", "install", "-r", "requirements.txt"], output_dir=output_dir, logger=logger)
 
-def evaluate(output_dir: Path, logger, config: OrgConfig) -> OrgConfig | None:
-    result = run_in_workspace(["python", "predict.py"], output_dir, auth=auth)
+async def evaluate(output_dir: Path, logger, config: OrgConfig) -> None:
+    result = await run_in_workspace(["python", "predict.py"], output_dir=output_dir, logger=logger)
     logger.info("stdout: %s", result.stdout)
-    return None
 ```
 
 ### `run_in_workspace`
 
-Run a command in the workspace directory. If the pipeline used Docker, the command automatically runs inside a container with the workspace mounted. Otherwise it runs locally.
+Run a command in the workspace directory. If the pipeline used Docker, the command runs inside the same container the agents used (via `docker exec`) — so any packages agents installed are available. Otherwise it runs locally. The function is async.
 
 ```python
 from magelab import run_in_workspace
 
-result = run_in_workspace(
+result = await run_in_workspace(
     cmd=["python", "src/predict.py", "data/test.json"],
     output_dir=output_dir,
     auth=auth,           # API key forwarded to container if needed
     timeout=120,
+    logger=logger,
 )
 print(result.stdout)
 ```
@@ -728,8 +731,15 @@ print(result.stdout)
 | `env` | `dict \| None` | `None` | Extra environment variables (local mode only). |
 | `auth` | `ResolvedAuth \| None` | `None` | API key forwarded to container if in Docker mode. |
 | `timeout` | `float \| None` | `None` | Timeout in seconds. |
+| `logger` | `Logger \| None` | `None` | Logger for command execution and results. |
 
-Returns `subprocess.CompletedProcess` with stdout/stderr captured as text. Especially useful for evaluating code the agents themselves wrote — for example, running an agent-built `predict.py` against a held-out test set. It ensures your evaluation runs in the same environment (local or Docker) as the agents.
+Returns a `WorkspaceResult` with `.returncode`, `.stdout`, and `.stderr` (all strings). Especially useful for evaluating code the agents themselves wrote — for example, running an agent-built `predict.py` against a held-out test set. It ensures your evaluation runs in the same environment (local or Docker) as the agents.
+
+Use `run_in_workspace` in the setup stage to install experiment-specific dependencies inside the container before the org runs:
+
+```python
+await run_in_workspace(["pip", "install", "-r", "requirements.txt"], output_dir=output_dir)
+```
 
 ### Abort on failure
 
@@ -779,7 +789,7 @@ uv run magelab --view-batch myorg.db -o ./batch_dir
 
 ## Docker
 
-The `--docker` flag runs org phases inside containers. Stage callbacks always run on the host.
+The `--docker` flag runs org phases inside containers. Stage callbacks run on the host but use `run_in_workspace` to execute commands inside the same container.
 
 ```bash
 uv run magelab config.yaml --sub --docker          # builds image if needed
@@ -788,15 +798,21 @@ uv run magelab config.yaml --sub --docker-build    # force rebuild
 
 How it works:
 1. The `magelab:latest` image is built from the repo's Dockerfile on first use (or when `--docker-build` is passed)
-2. The host's output directory is mounted at `/app` inside the container
-3. Forwards auth credentials (see [Authentication](#authentication))
-4. Runs as the host user to avoid permission issues on mounted files
+2. A long-lived container is created at pipeline start and stays alive through all stages (setup → org → evaluate)
+3. The host's output directory is mounted at `/app` inside the container
+4. Forwards auth credentials (see [Authentication](#authentication))
+5. Runs as the host user to avoid permission issues on mounted files
+6. The container is automatically removed after the pipeline completes
+
+Because the container persists through the full pipeline, packages that agents install during the org run (e.g. `pip install tiktoken`) are available to evaluation scripts that run afterward via `run_in_workspace`.
+
+Inside the container, `python` and `pip` both resolve to the magelab venv (`/opt/magelab/.venv/bin/`). This means agent `pip install` commands, `pytest`, and evaluation scripts all share the same Python environment.
 
 Agents' working directory is `/app/workspace/` — this is where all their file operations happen. The rest of the output directory (`/app/.sessions/`, `/app/logs/`, the database, etc.) is technically visible to agents but they have no reason to access it.
 
-Memory usage is roughly 5 GB per container for 10 agents. For batch runs, the image is built once before the batch starts.
+Memory usage is roughly 5 GB per container for 10 agents. For batch runs, the image is built once before the batch starts, and each run gets its own container.
 
-**Programmatic usage:** Pass `docker="run"` to `run_pipeline` or `run_pipeline_batch` to run org phases in Docker. Use `docker="build"` to force rebuild the image first. Stage callbacks using `run_in_workspace` automatically run inside a container when the pipeline used Docker — no extra flags needed.
+**Programmatic usage:** Pass `docker="run"` to `run_pipeline` or `run_pipeline_batch` to run org phases in Docker. Use `docker="build"` to force rebuild the image first. Stage callbacks using `run_in_workspace` automatically run inside the same container — no extra flags needed.
 
 **Note:** Auto-building the Docker image requires the repo Dockerfile, so `--docker-build` / `docker="build"` only works when running from the cloned repo or a git submodule.
 

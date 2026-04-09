@@ -5,9 +5,9 @@ Runs multi-stage org pipelines — locally or in Docker, one run or many in para
 | File | What it does |
 |------|-------------|
 | `execution.py` | `run_pipeline()`, `run_pipeline_batch()`, `view_run()`, `view_run_batch()`, `StageFn` type |
-| `docker.py` | Image management (`ensure_image`), containerized execution (`run_in_docker`), workspace subprocess helper (`run_in_workspace`) |
+| `docker.py` | Image management (`ensure_image`), container lifecycle (`start_container`, `cleanup_container`), containerized execution (`run_in_docker`), async workspace helper (`run_in_workspace`) |
 | `display.py` | `StatusDisplay` — live-updating terminal progress for concurrent runs |
-| `__init__.py` | Public API: `run_pipeline`, `run_pipeline_batch`, `run_in_workspace`, `view_run`, `view_run_batch`, `StageFn`, `RunOutcome` |
+| `__init__.py` | Public API: `run_pipeline`, `run_pipeline_batch`, `run_in_workspace`, `WorkspaceResult`, `view_run`, `view_run_batch`, `StageFn`, `RunOutcome` |
 
 <p align="center"><a href="#stage-based-pipeline">Stage-based pipeline</a> | <a href="#run_pipeline">run_pipeline</a> | <a href="#run_pipeline_batch">run_pipeline_batch</a> | <a href="#docker-execution">Docker execution</a> | <a href="#output-directory-structure">Output directory structure</a> | <a href="#viewing-runs">Viewing runs</a> | <a href="#statusdisplay">StatusDisplay</a></p>
 
@@ -63,7 +63,7 @@ output_dir/
 │   └── .trash/
 ├── logs/
 ├── configs/
-└── .docker_image        # Docker mode only — stores the image name
+└── .docker_container    # Docker mode only — stores the container name
 ```
 
 ### Config snapshots
@@ -119,44 +119,60 @@ The `on_phase` callback is invoked with a string describing the current pipeline
 
 ## Docker execution
 
-Docker mode runs the entire org inside an isolated container. This is useful when agents have access to tools like Bash and Write — the container provides a sandboxed environment where agents can install packages, run arbitrary code, and modify files without affecting the host machine. Each container gets its own filesystem; the only host state visible inside the container is the output directory, which is mounted at `/app`. Agents work inside `/app/workspace/` by default, but can access anything under `/app` (logs, configs, the DB). They cannot access anything on the host that isn't part of the output directory.
+Docker mode runs the org inside an isolated container. This is useful when agents have access to tools like Bash and Write — the container provides a sandboxed environment where agents can install packages, run arbitrary code, and modify files without affecting the host machine. The only host state visible inside the container is the output directory, which is mounted at `/app`. Agents work inside `/app/workspace/` by default.
 
-Stage callbacks (setup, evaluate, etc.) always run on the host, not inside containers. This means callbacks have full access to the host filesystem for things like copying data into the workspace or reading results out.
+A single long-lived container is created at pipeline start (`start_container`) and persists through all stages — setup, org run(s), and evaluation. This means packages agents install during the org run are available to evaluation scripts afterward. The container is cleaned up (`cleanup_container`) after the pipeline completes.
 
-`ensure_image` and `run_in_docker` are internal to the pipeline. `run_in_workspace` is public.
+Stage callbacks (setup, evaluate, etc.) run on the host but use `run_in_workspace` to execute commands inside the container. Callbacks also have full host filesystem access for copying data into the workspace or reading results out.
+
+Inside the container, `python` and `pip` both resolve to the magelab venv (`/opt/magelab/.venv/bin/`). Agent `pip install` commands, `pytest`, and evaluation scripts all share the same Python environment.
+
+`ensure_image`, `start_container`, `run_in_docker`, and `cleanup_container` are internal to the pipeline. `run_in_workspace` is public.
 
 ### ensure_image
 
 Builds the Docker image from the repo's Dockerfile if it doesn't already exist. `force=True` rebuilds unconditionally. Only works when running from the magelab repo (not from a pip install) — the Dockerfile must be present at the repo root. The default image name is `magelab:latest`.
 
+### start_container
+
+Creates a long-lived Docker container with `sleep infinity` as the main process. The container stays alive for the duration of the pipeline. All work happens via `docker exec`. Removes any stale container with the same name (handles crash recovery). Writes a `.docker_container` marker file so `run_in_workspace` can find the container.
+
 ### run_in_docker
 
-Runs a single org phase inside a Docker container:
+Runs a single org phase inside the pipeline's Docker container via `docker exec`:
 
-- Mounts `output_dir` at `/app` — agents see `workspace/`, configs, and the DB
+- The container is already running (created by `start_container`)
 - Requires the config YAML to be inside `output_dir` (it's always a snapshot in `configs/`)
-- For API key auth: passes `ANTHROPIC_API_KEY` via `-e` flag
+- For API key auth: `ANTHROPIC_API_KEY` was set at container creation
 - For subscription auth: passes `--sub` pointing to staged credentials in the mounted volume
-- Maps the frontend port through to the host (if specified)
+- Frontend port was mapped at container creation
 - Runs as the host user on Linux (so output files aren't root-owned)
-- Returns a `RunOutcome` derived from the container's exit code
-- On Ctrl+C, sends `docker stop` (not `docker kill`) for graceful DB finalization. Note: the container's stop timeout is 1 second, so finalization must be fast or it will be killed.
+- Returns a `RunOutcome` derived from the exit code
+- On Ctrl+C, sends `docker stop` for graceful DB finalization
 
 ### run_in_workspace
 
-Runs a subprocess in the workspace, automatically choosing local or Docker execution based on how the pipeline was started. Checks for a `.docker_image` marker in the output directory — if present, runs the command inside a Docker container with the workspace mounted. Otherwise runs locally.
+Async function that runs a command in the workspace, automatically choosing local or Docker execution. Checks for a `.docker_container` marker — if present, uses `docker exec` on the existing container (preserving agent-installed packages). Otherwise runs locally.
 
 ```python
-result = run_in_workspace(["python", "src/predict.py", "data/test.json"], output_dir)
+result = await run_in_workspace(["python", "src/predict.py", "data/test.json"], output_dir=output_dir)
 ```
 
-The working directory is `output_dir/workspace/`, so paths in `cmd` should be relative to the workspace root.
+The working directory is `/app/workspace/` in Docker mode or `output_dir/workspace/` locally, so paths in `cmd` should be relative to the workspace root.
 
-Important: in Docker mode, `run_in_workspace` mounts only `workspace/` (not the full `output_dir`). Scripts run this way cannot access logs, configs, or the DB — only workspace contents. This differs from `run_in_docker`, which mounts the full output directory.
+Use `run_in_workspace` in the setup stage to install experiment-specific dependencies:
 
-Additional parameters: `env` (environment variables; local mode only), `auth` (resolved authentication credentials; API key is passed via `-e` flag in Docker mode), `timeout` (seconds).
+```python
+await run_in_workspace(["pip", "install", "-r", "requirements.txt"], output_dir=output_dir)
+```
 
-**Authentication** is handled by the `auth` parameter, not environment files. For API key auth, the key is forwarded as an env var to the subprocess (local) or via `-e` flag (Docker). For subscription auth, credentials are already in agent session directories — `run_in_workspace` doesn't need to handle them.
+Additional parameters: `env` (environment variables; local mode only), `auth` (API key forwarded via `-e` flag in Docker mode), `timeout` (seconds), `logger` (logs command and outcome).
+
+Returns a `WorkspaceResult` with `.returncode`, `.stdout`, and `.stderr` (all strings).
+
+### cleanup_container
+
+Removes the Docker container and deletes the `.docker_container` marker. Called automatically in the `finally` block of `run_pipeline`. Also handles stale containers from prior unclean exits (called by `start_container` before creating a new one).
 
 ---
 
@@ -164,7 +180,7 @@ Additional parameters: `env` (environment variables; local mode only), `auth` (r
 
 ```
 output_dir/
-├── .docker_image               # marker: Docker image name (only present in Docker mode)
+├── .docker_container           # marker: container name (only present during Docker pipeline runs)
 ├── .sessions/                  # per-agent session directories
 │   ├── _configs/               # staging area: agent_settings_dir copied here by pipeline
 │   ├── coder_1/                # agent session dir (settings + backend state)
@@ -232,4 +248,4 @@ stages = [setup, evaluate]
 asyncio.run(run_pipeline_batch(config_path, output_dirs, stages=stages, ...))
 ```
 
-The `setup` stage copies domain-specific data into `workspace/`. The `evaluate` stage calls `run_in_workspace()` to execute agent-written scripts, then computes metrics. Both stages are defined in the experiment module, not in the pipeline package.
+The `setup` stage copies domain-specific data into `workspace/` and installs experiment dependencies via `await run_in_workspace(["pip", "install", "-r", "requirements.txt"], ...)`. The `evaluate` stage calls `await run_in_workspace()` to execute agent-written scripts, then computes metrics. Both stages are async and defined in the experiment module, not in the pipeline package.
