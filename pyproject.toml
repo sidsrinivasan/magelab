@@ -19,7 +19,7 @@ requires-python = ">=3.12.7"
 dependencies = [
     "aiohttp>=3.13.5",
     "anthropic>=0.91.0",
-    "claude-agent-sdk>=0.1.56",
+    "claude-agent-sdk==0.1.18",
     "mcp>=1.27.0",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.2",
