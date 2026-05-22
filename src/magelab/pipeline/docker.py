@@ -260,10 +260,11 @@ async def run_in_docker(
     ]
     if sys.platform != "win32":
         cmd += ["-u", f"{os.getuid()}:{os.getgid()}"]
-    # Workspace gets first-class importability: anything staged into the run's
-    # workspace/ (e.g. a project-specific MCP module like fund_server.py) is
-    # findable by importlib for the orchestrator and the MCP loader.
-    cmd += ["-e", "PYTHONPATH=/app/workspace"]
+    # Output-dir root and workspace both get importability: a project-specific
+    # MCP module (e.g. fund_server.py) staged at /app/<pkg> or workspace/<pkg> is
+    # findable by importlib for the orchestrator and the MCP loader. Staging at
+    # the /app root keeps such packages out of the agents' workspace cwd.
+    cmd += ["-e", "PYTHONPATH=/app:/app/workspace"]
     cmd += [
         container_name,
         "uv",
