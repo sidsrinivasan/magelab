@@ -10,8 +10,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Claude CLI ----
-RUN npm install -g @anthropic-ai/claude-code
+# ---- Claude CLI (pinned for reproducibility; needs >=2.1.x for Opus 4.8 adaptive thinking) ----
+# Bump this deliberately to update; an unpinned line silently freezes at whatever
+# the cache last fetched (that's how we ended up on a stale 2.1.96).
+RUN npm install -g @anthropic-ai/claude-code@2.1.168
 
 # ---- uv ----
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
